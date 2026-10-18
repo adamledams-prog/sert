@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roue aléatoire</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1a2e;
+    color: #eee;
+    font-family: 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  h1 {
+    font-size: 1.6rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #fff;
+  }
+
+  #back-btn {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    background: #2a2a4a;
+    color: #eee;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  #back-btn:hover { background: #3a3a6a; }
+
+  /* ── Layout principal ── */
+  #main {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 1000px;
+  }
+
+  /* ── Panneau gauche : roue ── */
+  #wheel-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  #wheel-wrap {
+    position: relative;
+    width: 588px;
+    height: 588px;
+  }
+
+  /* Flèche pointant vers la roue (droite → centre) */
+  #arrow {
+    position: absolute;
+    right: -18px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-top: 18px solid transparent;
+    border-bottom: 18px solid transparent;
+    border-right: 32px solid #fff;
+    filter: drop-shadow(0 0 4px rgba(0,0,0,.8));
+    z-index: 10;
+  }
+
+  #wheel-canvas {
+    border-radius: 50%;
+    box-shadow: 0 0 24px rgba(0,0,0,.6);
+  }
+
+  #spin-btn {
+    background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+    color: #fff;
+    border: none;
+    border-radius: 50px;
+    padding: 14px 48px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: opacity 0.2s;
+  }
+  #spin-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  #spin-btn:not(:disabled):hover { opacity: 0.88; }
+
+  #result-box {
+    min-height: 48px;
+    font-size: 1.4rem;
+    font-weight: bold;
+    text-align: center;
+    color: #ffd32a;
+    text-shadow: 0 0 8px rgba(253,210,42,.5);
+  }
+
+  /* ── Panneau droit : liste ── */
+  #list-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 260px;
+  }
+
+  #list-panel h2 {
+    font-size: 1rem;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  #count-label { font-size: 0.8rem; color: #666; }
+
+  #items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 420px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  #items-list::-webkit-scrollbar { width: 5px; }
+  #items-list::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+
+  .item-row {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+  }
+  .item-row input {
+    flex: 1;
+    background: #2a2a4a;
+    border: 1px solid #444;
+    border-radius: 5px;
+    color: #eee;
+    padding: 6px 8px;
+    font-size: 0.9rem;
+  }
+  .item-row input:focus { outline: none; border-color: #6c5ce7; }
+  .item-row .del-item {
+    background: none;
+    border: none;
+    color: #e74c3c;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 2px 5px;
+    border-radius: 4px;
+  }
+  .item-row .del-item:hover { background: rgba(231,76,60,.15); }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .btn-row button {
+    flex: 1;
+    background: #2a2a4a;
+    color: #eee;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.15s;
+  }
+  .btn-row button:hover { background: #3a3a6a; }
+
+  /* ── Overlay résultat ── */
+  #overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.75);
+    z-index: 100;
+    justify-content: center;
+    align-items: center;
+  }
+  #overlay.show { display: flex; }
+  #overlay-box {
+    background: #16213e;
+    border: 2px solid #6c5ce7;
+    border-radius: 16px;
+    padding: 40px 60px;
+    text-align: center;
+    box-shadow: 0 0 40px rgba(108,92,231,.4);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  #overlay-title { font-size: 1rem; color: #aaa; text-transform: uppercase; letter-spacing: 2px; }
+  #overlay-result { font-size: 2.4rem; font-weight: bold; color: #ffd32a; }
+  #overlay-close {
+    background: #6c5ce7;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 32px;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  #overlay-close:hover { background: #a29bfe; }
+</style>
+</head>
+<body>
+
+<button id="back-btn" onclick="location.href='tierlist.html'">← Tier List</button>
+<h1>🎡 Roue aléatoire</h1>
+
+<div id="main">
+  <!-- Roue -->
+  <div id="wheel-panel">
+    <div id="wheel-wrap">
+      <canvas id="wheel-canvas" width="588" height="588"></canvas>
+      <div id="arrow"></div>
+    </div>
+    <button id="spin-btn">🎰 Tourner !</button>
+    <div id="result-box"></div>
+  </div>
+
+  <!-- Liste des choix -->
+  <div id="list-panel">
+    <h2>Choix <span id="count-label">(0 / 200)</span></h2>
+    <div id="items-list"></div>
+    <div class="btn-row">
+      <button id="add-btn">+ Ajouter</button>
+      <button id="brawlers-btn" title="Charger les 106 brawlers">🎮 Brawlers</button>
+      <button id="clear-btn">🗑 Tout vider</button>
+    </div>
+  </div>
+</div>
+
+<!-- Overlay résultat -->
+<div id="overlay">
+  <div id="overlay-box">
+    <div id="overlay-title">🎉 Résultat</div>
+    <div id="overlay-result"></div>
+    <button id="overlay-close">OK</button>
+  </div>
+</div>
+
+<script>
+const BRAWLERS = ["8-Bit","Alli","Amber","Angelo","Ash","Barley","Bea","Belle","Berry","Bibi","Bo","Bolt","Bonnie","Brock","Bull","Buster","Buzz","Byron","Carl","Charlie","Chester","Chuck","Clancy","Colette","Colt","Cordelius","Crow","Damian","Darryl","Doug","Draco","Dynamike","Edgar","El Primo","Emz","Eve","Fang","Finx","Frank","Gale","Gene","Gigi","Glowy","Gray","Griff","Grom","Gus","Hank","Jacky","Jae-Yong","Janet","Jessie","Juju","Kaze","Kenji","Kit","Larry & Lawrie","Leon","Lily","Lola","Lou","Lumi","Maisie","Mandy","Max","Meeple","Meg","Melodie","Mico","Mina","Moe","Mortis","Mr. P","Najia","Nani","Nita","Nori","Ollie","Otis","Pam","Pearl","Penny","Pierce","Piper","Poco","R-T","Rico","Rosa","Ruffs","Sam","Sandy","Shade","Shelly","Sirius","Spike","Sprout","Squeak","Starr Nova","Stu","Surge","Tara","Tick","Trunk","Wendy","Willow","Ziggy"];
+
+
+const MAX_ITEMS   = 200;
+const canvas      = document.getElementById('wheel-canvas');
+const ctx         = canvas.getContext('2d');
+const CX = canvas.width / 2, CY = canvas.height / 2, R = CX - 11;
+
+// Palette de couleurs pour les segments
+const PALETTE = [
+  '#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c',
+  '#3498db','#9b59b6','#e91e63','#ff5722','#00bcd4',
+  '#8bc34a','#ff9800','#673ab7','#03a9f4','#4caf50',
+  '#f44336','#ff4081','#7c4dff','#00e5ff','#69f0ae',
+];
+
+let items   = [];
+let angle   = 0;   // rotation actuelle (radians)
+let spinning = false;
+
+// ── Persistance ────────────────────────────────────────────────────────────────
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+}
+function load() {
+  try { items = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { items = []; }
+}
+
+// ── Rendu de la roue ───────────────────────────────────────────────────────────
+function drawWheel() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const n = items.length;
+
+  if (n === 0) {
+    ctx.fillStyle = '#2a2a4a';
+    ctx.beginPath();
+    ctx.arc(CX, CY, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#666';
+    ctx.font = '18px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Ajoute des choix →', CX, CY);
+    return;
+  }
+
+  const slice = (Math.PI * 2) / n;
+
+  for (let i = 0; i < n; i++) {
+    const start = angle + i * slice;
+    const end   = start + slice;
+
+    // Segment
+    ctx.beginPath();
+    ctx.moveTo(CX, CY);
+    ctx.arc(CX, CY, R, start, end);
+    ctx.closePath();
+    ctx.fillStyle = PALETTE[i % PALETTE.length];
+    ctx.fill();
+    ctx.strokeStyle = '#1a1a2e';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Texte
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.rotate(start + slice / 2);
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    // Taille de texte adaptée au nombre de segments
+    const fs = Math.max(9, Math.min(16, 200 / n));
+    ctx.font = `bold ${fs}px Segoe UI`;
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,.7)';
+    ctx.shadowBlur = 3;
+    const maxLen = 22;
+    const label = items[i].length > maxLen ? items[i].slice(0, maxLen - 1) + '…' : items[i];
+    ctx.fillText(label, R - 12, 0);
+    ctx.restore();
+  }
+
+  // Centre
+  ctx.beginPath();
+  ctx.arc(CX, CY, 14, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+// ── Spin ───────────────────────────────────────────────────────────────────────
+function spin() {
+  if (spinning || items.length === 0) return;
+  spinning = true;
+  document.getElementById('spin-btn').disabled = true;
+  document.getElementById('result-box').textContent = '';
+
+  // Distance aléatoire de 5 à 20 cases + décélération progressive
+  const slice = (Math.PI * 2) / items.length;
+  const cases = 5 + Math.floor(Math.random() * 16);
+  const totalRotation = cases * slice;
+  const duration = 4000 + Math.random() * 6000; // 4–10 secondes
+  const startAngle = angle;
+  const startTime = performance.now();
+
+  function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+  function frame(now) {
+    const elapsed = now - startTime;
+    const t = Math.min(elapsed / duration, 1);
+    angle = startAngle + totalRotation * easeOut(t);
+    drawWheel();
+
+    if (t < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      spinning = false;
+      document.getElementById('spin-btn').disabled = false;
+      showResult();
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+function showResult() {
+  const n = items.length;
+  const slice = (Math.PI * 2) / n;
+  // La flèche pointe depuis la droite → angle 0 du canvas
+  // On cherche quel segment est sous l'angle 0 (droite)
+  const normalised = ((-(angle % (Math.PI * 2))) + Math.PI * 2) % (Math.PI * 2);
+  const idx = Math.floor(normalised / slice) % n;
+  const winner = items[idx];
+
+  document.getElementById('result-box').textContent = `🏆 ${winner}`;
+  document.getElementById('overlay-result').textContent = winner;
+  document.getElementById('overlay').classList.add('show');
+}
+
+// ── Liste des items ────────────────────────────────────────────────────────────
+function updateCount() {
+  document.getElementById('count-label').textContent = `(${items.length} / ${MAX_ITEMS})`;
+}
+
+function renderList() {
+  const container = document.getElementById('items-list');
+  container.innerHTML = '';
+  items.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = text;
+    input.maxLength = 60;
+    input.addEventListener('input', () => {
+      items[i] = input.value;
+      drawWheel();
+      save();
+    });
+
+    const del = document.createElement('button');
+    del.className = 'del-item';
+    del.textContent = '✕';
+    del.addEventListener('click', () => {
+      items.splice(i, 1);
+      renderList();
+      drawWheel();
+      save();
+    });
+
+    row.appendChild(input);
+    row.appendChild(del);
+    container.appendChild(row);
+  });
+  updateCount();
+}
+
+function addItem(text = '') {
+  if (items.length >= MAX_ITEMS) return;
+  items.push(text);
+  renderList();
+  drawWheel();
+  save();
+  // Scroll vers le bas
+  const list = document.getElementById('items-list');
+  list.scrollTop = list.scrollHeight;
+  // Focus sur le dernier input
+  const inputs = list.querySelectorAll('input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+// ── Événements ─────────────────────────────────────────────────────────────────
+document.getElementById('spin-btn').addEventListener('click', spin);
+document.getElementById('add-btn').addEventListener('click', () => addItem());
+document.getElementById('brawlers-btn').addEventListener('click', () => {
+  if (items.length > 0 && !confirm('Remplacer la liste par les 106 brawlers ?')) return;
+  items = [...BRAWLERS];
+  renderList();
+  drawWheel();
+  save();
+});
+document.getElementById('clear-btn').addEventListener('click', () => {
+  if (items.length === 0) return;
+  if (confirm('Vider tous les choix ?')) {
+    items = [];
+    renderList();
+    drawWheel();
+    save();
+  }
+});
+document.getElementById('overlay-close').addEventListener('click', () => {
+  document.getElementById('overlay').classList.remove('show');
+});
+document.getElementById('overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('overlay'))
+    document.getElementById('overlay').classList.remove('show');
+});
+
+// Touche Entrée dans un input → ajoute un item
+document.getElementById('items-list').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addItem();
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+load();
+if (items.length === 0) {
+  // Quelques exemples par défaut
+  ['Exemple 1', 'Exemple 2', 'Exemple 3'].forEach(t => items.push(t));
+}
+renderList();
+drawWheel();
+</script>
+</body>
+</html>

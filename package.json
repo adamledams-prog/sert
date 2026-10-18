@@ -1,0 +1,11 @@
+{
+  "name": "tier-list-maker",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npx live-server --port=3000 --open=tierlist.html",
+    "mirror": "node mirror-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

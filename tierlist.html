@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tier List Maker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1a2e;
+    color: #eee;
+    font-family: 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    padding: 16px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 1.6rem;
+    margin-bottom: 16px;
+    color: #fff;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  /* ── Toolbar ── */
+  #toolbar {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+
+  #toolbar button, #toolbar label {
+    background: #2a2a4a;
+    color: #eee;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.2s;
+  }
+
+  #toolbar button:hover, #toolbar label:hover {
+    background: #3a3a6a;
+  }
+
+  #fileInput { display: none; }
+
+  /* ── Tier rows ── */
+  #tierContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+
+  .tier-row {
+    display: flex;
+    align-items: stretch;
+    min-height: 80px;
+    border: 1px solid #333;
+    border-radius: 4px;
+    overflow: visible;
+    position: relative;
+  }
+
+  /* Label cell */
+  .tier-label {
+    width: 80px;
+    min-width: 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1.3rem;
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    user-select: none;
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .tier-label span {
+    display: block;
+    text-align: center;
+    word-break: break-all;
+    line-height: 1.1;
+  }
+
+  /* Edit popup */
+  .label-editor {
+    display: none;
+    position: absolute;
+    left: 85px;
+    top: 0;
+    background: #1a1a2e;
+    border: 1px solid #555;
+    border-radius: 8px;
+    padding: 12px;
+    z-index: 200;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+    width: 220px;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .label-editor.open { display: flex; }
+
+  .label-editor label {
+    font-size: 0.8rem;
+    color: #aaa;
+    margin-bottom: 2px;
+  }
+
+  .label-editor input[type="text"] {
+    background: #2a2a4a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #fff;
+    padding: 6px 8px;
+    font-size: 1rem;
+    width: 100%;
+  }
+
+  .label-editor input[type="color"] {
+    width: 100%;
+    height: 36px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background: none;
+  }
+
+  .label-editor .color-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .label-editor .color-presets span {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.15s;
+  }
+
+  .label-editor .color-presets span:hover {
+    border-color: #fff;
+  }
+
+  .label-editor .editor-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .label-editor .editor-row label {
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  .label-editor .close-editor {
+    background: #3a3a6a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #eee;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    margin-top: 4px;
+  }
+
+  .label-editor .close-editor:hover { background: #4a4a8a; }
+
+  /* Delete tier */
+  .delete-tier {
+    position: absolute;
+    right: 4px;
+    top: 4px;
+    background: rgba(200,50,50,0.15);
+    border: 1px solid rgba(200,50,50,0.4);
+    color: #f88;
+    border-radius: 4px;
+    width: 22px;
+    height: 22px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 10;
+  }
+
+  .tier-row:hover .delete-tier { opacity: 1; }
+  .delete-tier:hover { background: rgba(200,50,50,0.4) !important; }
+
+  /* Items area */
+  .tier-items {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 4px;
+    padding: 6px;
+    background: #111122;
+    min-height: 80px;
+    contain: layout style;
+  }
+
+  .tier-items.drag-over {
+    background: #1e1e3a;
+    outline: 2px dashed #888;
+    outline-offset: -2px;
+  }
+
+  /* Images */
+  .tier-img {
+    width: 70px;
+    height: 70px;
+    object-fit: cover;
+    cursor: grab;
+    border-radius: 3px;
+    border: 2px solid transparent;
+    transition: border-color 0.15s, transform 0.1s;
+    user-select: none;
+    flex-shrink: 0;
+    will-change: transform;
+  }
+
+  .tier-img:hover { border-color: #fff; transform: scale(1.05); }
+  .tier-img.dragging { opacity: 0.4; cursor: grabbing; }
+
+  /* Désactive les effets coûteux sur toutes les images pendant un drag */
+  body.is-dragging .tier-img:not(.dragging) {
+    pointer-events: none;
+    transition: none;
+    transform: none;
+  }
+
+  /* ── Image pool ── */
+  #poolSection {
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px;
+    background: #0d0d1e;
+    margin-bottom: 8px;
+  }
+
+  #poolTitle {
+    font-size: 0.85rem;
+    color: #888;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  #imagePool {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 80px;
+  }
+
+  #imagePool.drag-over {
+    background: #1e1e3a;
+    outline: 2px dashed #888;
+    outline-offset: -2px;
+    border-radius: 4px;
+  }
+
+  /* Context menu */
+  #ctx-menu {
+    position: fixed;
+    z-index: 9999;
+    background: #2a2a4a;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 4px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    min-width: 140px;
+  }
+  #ctx-menu button {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    color: #ff6b6b;
+    padding: 8px 12px;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.9rem;
+  }
+  #ctx-menu button:hover { background: rgba(255,107,107,0.15); }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    color: #444;
+    font-size: 0.75rem;
+    margin-top: 12px;
+  }
+
+  /* Responsive */
+  @media (max-width: 500px) {
+    .tier-label { width: 56px; min-width: 56px; font-size: 1rem; }
+    .tier-img { width: 52px; height: 52px; }
+    .label-editor { left: 60px; width: 190px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>🏆 Tier List Maker</h1>
+
+<div id="toolbar">
+  <label for="fileInput">📁 Importer des images</label>
+  <input type="file" id="fileInput" accept="image/*" multiple>
+  <button id="addTierBtn">➕ Ajouter une ligne</button>
+  <button id="clearPoolBtn">🗑️ Vider le pool</button>
+  <button onclick="location.href='wheel.html'" title="Roue aléatoire">🎡 Roue</button>
+  <button id="resetBtn" style="background:#3a1a1a;border-color:#a33;color:#f88;">⚠️ Tout réinitialiser</button>
+</div>
+
+<div id="tierContainer"></div>
+
+<div id="poolSection">
+  <div id="poolTitle">Images non classées</div>
+  <div id="imagePool"></div>
+</div>
+
+<footer>Tier List Maker — 100 % gratuit, aucune pub</footer>
+
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────────
+const DEFAULT_TIERS = [
+  { label: 'S', bg: '#ff7675' },
+  { label: 'A', bg: '#fd9644' },
+  { label: 'B', bg: '#ffd32a' },
+  { label: 'C', bg: '#44bd32' },
+];
+
+const PRESETS = [
+  '#ff7675','#fd9644','#ffd32a','#44bd32','#0097e6',
+  '#a29bfe','#e84393','#b2bec3','#6c5ce7','#00cec9',
+  '#fdcb6e','#e17055','#74b9ff','#55efc4','#dfe6e9',
+];
+
+const STORAGE_KEY = 'tierlist_v1';
+let dragSrc = null;
+
+// ── Save / Load ────────────────────────────────────────────────────────────────
+let saveTimer = null;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      const tiers = [];
+      document.querySelectorAll('.tier-row').forEach(row => {
+        const label = row.querySelector('.tier-label span').textContent;
+        const bg    = row.querySelector('.tier-label').style.background;
+        const fontSize = row.querySelector('.tier-label').style.fontSize || '';
+        const images = Array.from(row.querySelectorAll('.tier-items .tier-img')).map(i => i.src);
+        tiers.push({ label, bg, fontSize, images });
+      });
+      const poolImages = Array.from(document.querySelectorAll('#imagePool .tier-img')).map(i => i.src);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ tiers, poolImages }));
+    } catch(e) {
+      console.warn('Sauvegarde impossible (stockage plein ?)', e);
+    }
+  }, 400);
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || !data.tiers || !data.tiers.length) return false;
+    data.tiers.forEach(t => container.appendChild(createTierRow(t.label, t.bg, t.images || [], t.fontSize || '')));
+    (data.poolImages || []).forEach(src => pool.appendChild(createTierImg(src)));
+    return true;
+  } catch(e) { return false; }
+}
+
+// ── Contrast color ─────────────────────────────────────────────────────────────
+function getContrastColor(hex) {
+  // hex can sometimes be an rgb() string from style.background — normalize it
+  let h = hex.trim();
+  if (h.startsWith('rgb')) {
+    const m = h.match(/\d+/g);
+    if (m) h = '#' + [m[0],m[1],m[2]].map(v => parseInt(v).toString(16).padStart(2,'0')).join('');
+  }
+  if (!h.startsWith('#') || h.length < 7) return '#fff';
+  const r = parseInt(h.slice(1,3),16);
+  const g = parseInt(h.slice(3,5),16);
+  const b = parseInt(h.slice(5,7),16);
+  return (r*299 + g*587 + b*114) / 1000 > 128 ? '#000' : '#fff';
+}
+
+// ── Build a tier row ───────────────────────────────────────────────────────────
+function createTierRow(label = 'NEW', bg = '#888888', savedImages = [], savedFontSize = '') {
+  const row = document.createElement('div');
+  row.className = 'tier-row';
+
+  // Label cell
+  const cell = document.createElement('div');
+  cell.className = 'tier-label';
+  cell.style.background = bg;
+  cell.style.color = getContrastColor(bg);
+  if (savedFontSize) cell.style.fontSize = savedFontSize;
+
+  const span = document.createElement('span');
+  span.textContent = label;
+  if (savedFontSize) span.style.fontSize = savedFontSize;
+  cell.appendChild(span);
+
+  // Editor popup
+  const editor = document.createElement('div');
+  editor.className = 'label-editor';
+
+  const lbTxt = document.createElement('label');
+  lbTxt.textContent = 'Texte';
+  const txtInput = document.createElement('input');
+  txtInput.type = 'text';
+  txtInput.value = label;
+  txtInput.maxLength = 15;
+  txtInput.addEventListener('input', () => {
+    span.textContent = txtInput.value || ' ';
+    scheduleSave();
+  });
+
+  // Taille du texte
+  const currentSize = parseInt(cell.style.fontSize) || 20;
+  const lbSize = document.createElement('label');
+  lbSize.textContent = 'Taille du texte';
+  const sizeRow = document.createElement('div');
+  sizeRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  const sizeInput = document.createElement('input');
+  sizeInput.type = 'range';
+  sizeInput.min = '10'; sizeInput.max = '48'; sizeInput.value = currentSize;
+  sizeInput.style.flex = '1';
+  const sizeVal = document.createElement('span');
+  sizeVal.textContent = currentSize + 'px';
+  sizeVal.style.cssText = 'min-width:36px;font-size:0.8rem;color:#aaa;';
+  sizeInput.addEventListener('input', () => {
+    const v = sizeInput.value;
+    span.style.fontSize = v + 'px';
+    cell.style.fontSize = v + 'px';
+    sizeVal.textContent = v + 'px';
+    scheduleSave();
+  });
+  sizeRow.appendChild(sizeInput);
+  sizeRow.appendChild(sizeVal);
+
+  const lbCol = document.createElement('label');
+  lbCol.textContent = 'Couleur de fond';
+  const colInput = document.createElement('input');
+  colInput.type = 'color';
+  colInput.value = bg.startsWith('#') ? bg : '#888888';
+  colInput.addEventListener('input', () => {
+    cell.style.background = colInput.value;
+    cell.style.color = getContrastColor(colInput.value);
+    scheduleSave();
+  });
+
+  const presetDiv = document.createElement('div');
+  presetDiv.className = 'color-presets';
+  PRESETS.forEach(c => {
+    const dot = document.createElement('span');
+    dot.style.background = c;
+    dot.title = c;
+    dot.addEventListener('click', () => {
+      colInput.value = c;
+      cell.style.background = c;
+      cell.style.color = getContrastColor(c);
+      scheduleSave();
+    });
+    presetDiv.appendChild(dot);
+  });
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'close-editor';
+  closeBtn.textContent = 'Fermer';
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    editor.classList.remove('open');
+  });
+
+  editor.appendChild(lbTxt);
+  editor.appendChild(txtInput);
+  editor.appendChild(lbSize);
+  editor.appendChild(sizeRow);
+  editor.appendChild(lbCol);
+  editor.appendChild(colInput);
+  editor.appendChild(presetDiv);
+  editor.appendChild(closeBtn);
+  cell.appendChild(editor);
+
+  cell.addEventListener('click', (e) => {
+    if (e.target.closest('.label-editor')) return;
+    document.querySelectorAll('.label-editor.open').forEach(el => {
+      if (el !== editor) el.classList.remove('open');
+    });
+    editor.classList.toggle('open');
+  });
+
+  // Items area (droppable)
+  const items = document.createElement('div');
+  items.className = 'tier-items';
+  setupDropZone(items);
+
+  // Restore saved images into this row
+  savedImages.forEach(src => items.appendChild(createTierImg(src)));
+
+  // Delete button
+  const del = document.createElement('button');
+  del.className = 'delete-tier';
+  del.title = 'Supprimer cette ligne';
+  del.textContent = '✕';
+  del.addEventListener('click', () => {
+    items.querySelectorAll('.tier-img').forEach(img => {
+      document.getElementById('imagePool').appendChild(img);
+    });
+    row.remove();
+    scheduleSave();
+  });
+
+  row.appendChild(cell);
+  row.appendChild(items);
+  row.appendChild(del);
+  return row;
+}
+
+// ── Drop zone logic ────────────────────────────────────────────────────────────
+function setupDropZone(zone) {
+  let rafPending = false;
+  zone.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(() => {
+        zone.classList.add('drag-over');
+        rafPending = false;
+      });
+    }
+  }, { passive: false });
+  zone.addEventListener('dragleave', e => {
+    if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
+  });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    if (dragSrc && dragSrc.parentNode !== zone) {
+      zone.appendChild(dragSrc);
+      dragSrc.classList.remove('dragging');
+      dragSrc = null;
+      scheduleSave();
+    }
+  });
+}
+
+// ── Create a draggable image ───────────────────────────────────────────────────
+function createTierImg(src) {
+  const img = document.createElement('img');
+  img.className = 'tier-img';
+  img.src = src;
+  img.draggable = true;
+  img.addEventListener('dragstart', (e) => {
+    dragSrc = img;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setDragImage(img, 35, 35);
+    setTimeout(() => {
+      img.classList.add('dragging');
+      document.body.classList.add('is-dragging');
+    }, 0);
+  });
+  img.addEventListener('dragend', () => {
+    img.classList.remove('dragging');
+    document.body.classList.remove('is-dragging');
+    dragSrc = null;
+  });
+  img.title = 'Clic droit pour supprimer';
+  img.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    showContextMenu(e.pageX, e.pageY, img);
+  });
+  return img;
+}
+
+// ── Context menu ─────────────────────────────────────────────────────────────
+let ctxMenu = null;
+function showContextMenu(x, y, img) {
+  removeContextMenu();
+  ctxMenu = document.createElement('div');
+  ctxMenu.id = 'ctx-menu';
+  ctxMenu.innerHTML = `<button id="ctx-delete">🗑️ Supprimer</button>`;
+  document.body.appendChild(ctxMenu);
+
+  // Positionne sans déborder de l'écran
+  const mw = 160, mh = 40;
+  ctxMenu.style.left = Math.min(x, window.innerWidth  - mw - 8) + 'px';
+  ctxMenu.style.top  = Math.min(y, window.innerHeight - mh - 8) + 'px';
+
+  ctxMenu.querySelector('#ctx-delete').addEventListener('click', () => {
+    img.remove();
+    scheduleSave();
+    removeContextMenu();
+  });
+}
+function removeContextMenu() {
+  if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
+}
+document.addEventListener('click',       removeContextMenu);
+document.addEventListener('contextmenu', e => { if (!e.target.closest('#ctx-menu')) removeContextMenu(); });
+document.addEventListener('keydown',     e => { if (e.key === 'Escape') removeContextMenu(); });
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+const container = document.getElementById('tierContainer');
+const pool = document.getElementById('imagePool');
+setupDropZone(pool);
+
+// Charge la sauvegarde, sinon crée les lignes par défaut
+if (!loadState()) {
+  DEFAULT_TIERS.forEach(t => container.appendChild(createTierRow(t.label, t.bg)));
+}
+
+// ── Add tier button ────────────────────────────────────────────────────────────
+document.getElementById('addTierBtn').addEventListener('click', () => {
+  const colors = ['#6c5ce7','#e84393','#00cec9','#fdcb6e','#b2bec3','#e17055'];
+  const randomBg = colors[Math.floor(Math.random() * colors.length)];
+  container.appendChild(createTierRow('NEW', randomBg));
+  scheduleSave();
+});
+
+// ── Resize image to thumbnail before storage (perf) ───────────────────────────
+function resizeToThumb(src, size = 70) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      // Crop centré
+      const ratio = Math.max(size / img.width, size / img.height);
+      const w = img.width * ratio, h = img.height * ratio;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+      resolve(canvas.toDataURL('image/webp', 0.75));
+    };
+    img.src = src;
+  });
+}
+
+// ── Import images ──────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', function() {
+  const files = Array.from(this.files);
+  let loaded = 0;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = async e => {
+      const thumb = await resizeToThumb(e.target.result);
+      pool.appendChild(createTierImg(thumb));
+      loaded++;
+      if (loaded === files.length) scheduleSave();
+    };
+    reader.readAsDataURL(file);
+  });
+  this.value = '';
+});
+
+// ── Clear pool ─────────────────────────────────────────────────────────────────
+document.getElementById('clearPoolBtn').addEventListener('click', () => {
+  if (pool.querySelectorAll('.tier-img').length === 0) return;
+  if (confirm('Vider toutes les images non classées ?')) {
+    pool.querySelectorAll('.tier-img').forEach(img => img.remove());
+    scheduleSave();
+  }
+});
+
+// ── Reset everything ──────────────────────────────────────────────────────────
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (!confirm('Réinitialiser complètement ? Toutes les lignes et images seront supprimées.')) return;
+  container.innerHTML = '';
+  pool.innerHTML = '';
+  localStorage.removeItem(STORAGE_KEY);
+  DEFAULT_TIERS.forEach(t => container.appendChild(createTierRow(t.label, t.bg)));
+});
+
+// ── Close editors on outside click ────────────────────────────────────────────
+document.addEventListener('click', e => {
+  if (!e.target.closest('.tier-label')) {
+    document.querySelectorAll('.label-editor.open').forEach(el => el.classList.remove('open'));
+  }
+});
+</script>
+</body>
+</html>

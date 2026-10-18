@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Code écran — miroir vidéo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1a2e;
+    color: #eee;
+    font-family: 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+  }
+
+  h1 {
+    font-size: clamp(1.2rem, 4vw, 1.6rem);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  .subtitle {
+    color: #9aa;
+    font-size: 0.95rem;
+    text-align: center;
+    max-width: 420px;
+    line-height: 1.45;
+  }
+
+  .panel {
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: stretch;
+  }
+
+  .hidden { display: none !important; }
+
+  .btn {
+    background: linear-gradient(135deg, #4a6cf7, #6b48ff);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.12s, filter 0.12s;
+  }
+  .btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn.secondary {
+    background: #2a2a4a;
+    border: 1px solid #555;
+  }
+  .btn.danger {
+    background: linear-gradient(135deg, #c0392b, #922b21);
+  }
+
+  .code-display {
+    font-size: clamp(4rem, 18vw, 7rem);
+    font-weight: 800;
+    letter-spacing: 0.35em;
+    text-align: center;
+    color: #fff;
+    text-shadow: 0 0 40px rgba(74, 108, 247, 0.5);
+    padding: 24px 0;
+  }
+
+  .status {
+    text-align: center;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: #252545;
+    font-size: 0.95rem;
+  }
+  .status.ok { background: #1e3d2f; color: #8feca8; }
+  .status.warn { background: #3d3520; color: #ffd97a; }
+  .status.err { background: #3d1e1e; color: #ff9a9a; }
+
+  .code-input-wrap {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  .digit {
+    width: 72px;
+    height: 84px;
+    font-size: 2.2rem;
+    text-align: center;
+    border-radius: 12px;
+    border: 2px solid #555;
+    background: #12122a;
+    color: #fff;
+  }
+  .digit:focus {
+    outline: none;
+    border-color: #6b48ff;
+    box-shadow: 0 0 0 3px rgba(107, 72, 255, 0.35);
+  }
+
+  #remoteVideo {
+    width: 100%;
+    max-width: 960px;
+    max-height: 70vh;
+    background: #000;
+    border-radius: 12px;
+    border: 1px solid #444;
+  }
+
+  .back {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    background: #2a2a4a;
+    color: #eee;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .back:hover { background: #3a3a6a; }
+
+  .hint {
+    font-size: 0.85rem;
+    color: #778;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<button type="button" class="back hidden" id="backBtn">← Accueil</button>
+
+<section id="viewHome" class="panel">
+  <h1>Miroir écran</h1>
+  <p class="subtitle">Sur l’ordinateur : crée un code et affiche-le. Sur le téléphone : ouvre cette page et saisis le même code pour envoyer l’écran.</p>
+  <button type="button" class="btn" id="btnCreate">Créer code</button>
+  <button type="button" class="btn secondary" id="btnEnter">Saisir code</button>
+</section>
+
+<section id="viewHost" class="panel hidden">
+  <h1>Code écran</h1>
+  <p class="subtitle">Ce code est visible publiquement — le téléphone doit le saisir pour se connecter.</p>
+  <div class="code-display" id="hostCode">---</div>
+  <div class="status warn" id="hostStatus">En attente du téléphone…</div>
+  <video id="remoteVideo" class="hidden" autoplay playsinline muted></video>
+  <button type="button" class="btn danger hidden" id="btnStopHost">Arrêter</button>
+</section>
+
+<section id="viewClient" class="panel hidden">
+  <h1>Saisir le code</h1>
+  <p class="subtitle">Entre les 3 chiffres affichés sur l’ordinateur.</p>
+  <div class="code-input-wrap">
+    <input class="digit" type="tel" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Chiffre 1" id="d1">
+    <input class="digit" type="tel" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Chiffre 2" id="d2">
+    <input class="digit" type="tel" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Chiffre 3" id="d3">
+  </div>
+  <div class="status hidden" id="clientStatus"></div>
+  <button type="button" class="btn" id="btnConnect">Se connecter</button>
+  <button type="button" class="btn secondary hidden" id="btnShareScreen">Partager l’écran</button>
+  <p class="hint">Sur Android Chrome : autorise le partage d’écran quand le navigateur le demande.</p>
+</section>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+
+  const viewHome = $('viewHome');
+  const viewHost = $('viewHost');
+  const viewClient = $('viewClient');
+  const backBtn = $('backBtn');
+  const hostCode = $('hostCode');
+  const hostStatus = $('hostStatus');
+  const remoteVideo = $('remoteVideo');
+  const clientStatus = $('clientStatus');
+  const digits = [$('d1'), $('d2'), $('d3')];
+
+  let ws = null;
+  let pc = null;
+  let localStream = null;
+  let currentCode = '';
+  let role = null;
+
+  const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+  function showView(name) {
+    viewHome.classList.toggle('hidden', name !== 'home');
+    viewHost.classList.toggle('hidden', name !== 'host');
+    viewClient.classList.toggle('hidden', name !== 'client');
+    backBtn.classList.toggle('hidden', name === 'home');
+  }
+
+  function setStatus(el, text, kind) {
+    el.textContent = text;
+    el.classList.remove('hidden', 'ok', 'warn', 'err');
+    if (kind) el.classList.add(kind);
+  }
+
+  function cleanup() {
+    if (ws) {
+      ws.onclose = null;
+      ws.close();
+      ws = null;
+    }
+    if (pc) {
+      pc.close();
+      pc = null;
+    }
+    if (localStream) {
+      localStream.getTracks().forEach((t) => t.stop());
+      localStream = null;
+    }
+    remoteVideo.srcObject = null;
+    remoteVideo.classList.add('hidden');
+    $('btnStopHost').classList.add('hidden');
+    $('btnShareScreen').classList.add('hidden');
+    currentCode = '';
+    role = null;
+  }
+
+  function wsUrl(code, r) {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${location.host}/ws?code=${encodeURIComponent(code)}&role=${r}`;
+  }
+
+  function connectWs(code, r) {
+    return new Promise((resolve, reject) => {
+      const socket = new WebSocket(wsUrl(code, r));
+      socket.onopen = () => resolve(socket);
+      socket.onerror = () => reject(new Error('WebSocket'));
+      socket.onclose = (ev) => {
+        if (ev.code >= 4000) {
+          const msgs = {
+            4001: 'Code expiré. Crée-en un nouveau sur le PC.',
+            4002: 'Cet écran est déjà ouvert sur le PC.',
+            4003: 'Un téléphone est déjà connecté.',
+          };
+          setStatus(clientStatus, msgs[ev.code] || 'Connexion refusée.', 'err');
+        }
+      };
+    });
+  }
+
+  function createPeer(isHost) {
+    const peer = new RTCPeerConnection({ iceServers });
+    peer.onicecandidate = (ev) => {
+      if (ev.candidate && ws) {
+        ws.send(JSON.stringify({ type: 'ice', candidate: ev.candidate }));
+      }
+    };
+    if (isHost) {
+      peer.ontrack = (ev) => {
+        remoteVideo.srcObject = ev.streams[0];
+        remoteVideo.classList.remove('hidden');
+        remoteVideo.muted = false;
+        setStatus(hostStatus, 'Écran reçu — lecture en cours.', 'ok');
+        $('btnStopHost').classList.remove('hidden');
+      };
+    }
+    return peer;
+  }
+
+  function wireSignaling(socket, isHost) {
+    socket.onmessage = async (ev) => {
+      let msg;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+
+      if (msg.type === 'peer-joined') {
+        if (isHost) {
+          setStatus(hostStatus, 'Téléphone connecté. En attente du partage d’écran…', 'ok');
+        } else {
+          setStatus(clientStatus, 'Connecté au PC. Appuie sur « Partager l’écran ».', 'ok');
+          $('btnShareScreen').classList.remove('hidden');
+        }
+      }
+
+      if (msg.type === 'peer-left') {
+        if (isHost) {
+          setStatus(hostStatus, 'Téléphone déconnecté.', 'warn');
+          remoteVideo.classList.add('hidden');
+        } else {
+          setStatus(clientStatus, 'PC déconnecté.', 'warn');
+        }
+      }
+
+      if (!pc) return;
+
+      if (msg.type === 'offer' && isHost) {
+        await pc.setRemoteDescription(msg.sdp);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'answer', sdp: pc.localDescription }));
+      }
+
+      if (msg.type === 'answer' && !isHost) {
+        await pc.setRemoteDescription(msg.sdp);
+      }
+
+      if (msg.type === 'ice' && msg.candidate) {
+        try {
+          await pc.addIceCandidate(msg.candidate);
+        } catch (_) {}
+      }
+    };
+  }
+
+  $('btnCreate').onclick = async () => {
+    cleanup();
+    showView('host');
+    setStatus(hostStatus, 'Création du code…', 'warn');
+    try {
+      const res = await fetch('/api/create-code', { method: 'POST' });
+      if (!res.ok) throw new Error('api');
+      const { code } = await res.json();
+      currentCode = code;
+      role = 'host';
+      hostCode.textContent = code;
+      setStatus(hostStatus, 'En attente du téléphone…', 'warn');
+
+      ws = await connectWs(code, 'host');
+      pc = createPeer(true);
+      wireSignaling(ws, true);
+    } catch {
+      setStatus(hostStatus, 'Impossible de créer le code. Lance mirror-server.js.', 'err');
+    }
+  };
+
+  $('btnEnter').onclick = () => {
+    cleanup();
+    showView('client');
+    digits.forEach((d) => { d.value = ''; });
+    clientStatus.classList.add('hidden');
+    digits[0].focus();
+  };
+
+  digits.forEach((input, i) => {
+    input.addEventListener('input', () => {
+      input.value = input.value.replace(/\D/g, '').slice(-1);
+      if (input.value && digits[i + 1]) digits[i + 1].focus();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !input.value && digits[i - 1]) digits[i - 1].focus();
+    });
+  });
+
+  function getEnteredCode() {
+    return digits.map((d) => d.value).join('');
+  }
+
+  $('btnConnect').onclick = async () => {
+    const code = getEnteredCode();
+    if (code.length !== 3) {
+      setStatus(clientStatus, 'Entre exactement 3 chiffres.', 'err');
+      return;
+    }
+
+    cleanup();
+    currentCode = code;
+    role = 'client';
+    setStatus(clientStatus, 'Vérification du code…', 'warn');
+
+    try {
+      const check = await fetch(`/api/room/${code}`);
+      const data = await check.json();
+      if (!data.ok) {
+        setStatus(clientStatus, 'Code inconnu ou expiré.', 'err');
+        return;
+      }
+
+      ws = await connectWs(code, 'client');
+      pc = createPeer(false);
+      wireSignaling(ws, false);
+      setStatus(clientStatus, 'Connecté. En attente du PC…', 'ok');
+    } catch {
+      setStatus(clientStatus, 'Connexion impossible. Même Wi‑Fi et même adresse que le PC ?', 'err');
+    }
+  };
+
+  $('btnShareScreen').onclick = async () => {
+    if (!pc || !ws) return;
+    setStatus(clientStatus, 'Demande d’accès à l’écran…', 'warn');
+    try {
+      const constraints = {
+        video: { frameRate: { ideal: 30, max: 30 } },
+        audio: false,
+      };
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        throw new Error('unsupported');
+      }
+      localStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+      localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+
+      localStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        setStatus(clientStatus, 'Partage d’écran arrêté.', 'warn');
+      });
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: 'offer', sdp: pc.localDescription }));
+      setStatus(clientStatus, 'Écran envoyé vers le PC.', 'ok');
+    } catch (e) {
+      const msg = e.message === 'unsupported'
+        ? 'Ton navigateur ne permet pas le partage d’écran ici.'
+        : 'Partage refusé ou annulé.';
+      setStatus(clientStatus, msg, 'err');
+    }
+  };
+
+  $('btnStopHost').onclick = () => {
+    cleanup();
+    showView('home');
+  };
+
+  backBtn.onclick = () => {
+    cleanup();
+    showView('home');
+  };
+})();
+</script>
+</body>
+</html>
