@@ -117,6 +117,24 @@
     background: #000;
     border-radius: 12px;
     border: 1px solid #444;
+    cursor: pointer;
+    object-fit: contain;
+  }
+
+  #remoteVideo:fullscreen,
+  #remoteVideo:-webkit-full-screen {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    border-radius: 0;
+    border: none;
+  }
+
+  .video-hint {
+    font-size: 0.85rem;
+    color: #778;
+    text-align: center;
   }
 
   .back {
@@ -146,32 +164,34 @@
 
 <section id="viewHome" class="panel">
   <h1>Miroir écran</h1>
-  <p class="subtitle">Sur l’ordinateur : crée un code et affiche-le. Sur le téléphone : ouvre cette page et saisis le même code pour envoyer l’écran.</p>
-  <button type="button" class="btn" id="btnCreate">Créer code</button>
-  <button type="button" class="btn secondary" id="btnEnter">Saisir code</button>
+  <p class="subtitle">Sur le <strong>téléphone</strong> : crée le code et partage ton écran. Sur l’<strong>ordinateur</strong> : saisis le code pour voir l’écran du téléphone.</p>
+  <button type="button" class="btn" id="btnCreate">Créer code <span style="font-weight:400;font-size:0.85em">(téléphone)</span></button>
+  <button type="button" class="btn secondary" id="btnEnter">Saisir code <span style="font-weight:400;font-size:0.85em">(ordinateur)</span></button>
 </section>
 
-<section id="viewHost" class="panel hidden">
-  <h1>Code écran</h1>
-  <p class="subtitle">Ce code est visible publiquement — le téléphone doit le saisir pour se connecter.</p>
+<section id="viewBroadcast" class="panel hidden">
+  <h1>Ton code</h1>
+  <p class="subtitle">Affiche ce code à l’ordinateur, puis partage l’écran de ce téléphone.</p>
   <div class="code-display" id="hostCode">---</div>
-  <div class="status warn" id="hostStatus">En attente du téléphone…</div>
-  <video id="remoteVideo" class="hidden" autoplay playsinline muted></video>
-  <button type="button" class="btn danger hidden" id="btnStopHost">Arrêter</button>
+  <div class="status warn" id="broadcastStatus">Création…</div>
+  <button type="button" class="btn secondary hidden" id="btnShareScreen">Partager l’écran du téléphone</button>
+  <p class="hint">Android + Chrome recommandé. Autorise la capture d’écran si le navigateur le demande.</p>
+  <button type="button" class="btn danger" id="btnStopBroadcast">Arrêter</button>
 </section>
 
-<section id="viewClient" class="panel hidden">
+<section id="viewViewer" class="panel hidden" style="max-width:960px">
   <h1>Saisir le code</h1>
-  <p class="subtitle">Entre les 3 chiffres affichés sur l’ordinateur.</p>
+  <p class="subtitle">Entre les 3 chiffres affichés sur le téléphone.</p>
   <div class="code-input-wrap">
     <input class="digit" type="tel" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Chiffre 1" id="d1">
     <input class="digit" type="tel" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Chiffre 2" id="d2">
     <input class="digit" type="tel" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Chiffre 3" id="d3">
   </div>
-  <div class="status hidden" id="clientStatus"></div>
+  <div class="status hidden" id="viewerStatus"></div>
   <button type="button" class="btn" id="btnConnect">Se connecter</button>
-  <button type="button" class="btn secondary hidden" id="btnShareScreen">Partager l’écran</button>
-  <p class="hint">Sur Android Chrome : autorise le partage d’écran quand le navigateur le demande. Fonctionne en ligne (Vercel) sans serveur à lancer.</p>
+  <video id="remoteVideo" class="hidden" autoplay playsinline title="Clique pour plein écran"></video>
+  <p class="video-hint hidden" id="videoFullscreenHint">Clique sur l’image pour le plein écran (Échap pour quitter).</p>
+  <button type="button" class="btn danger hidden" id="btnStopViewer">Arrêter</button>
 </section>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -180,19 +200,20 @@
   const $ = (id) => document.getElementById(id);
 
   const viewHome = $('viewHome');
-  const viewHost = $('viewHost');
-  const viewClient = $('viewClient');
+  const viewBroadcast = $('viewBroadcast');
+  const viewViewer = $('viewViewer');
   const backBtn = $('backBtn');
   const hostCode = $('hostCode');
-  const hostStatus = $('hostStatus');
+  const broadcastStatus = $('broadcastStatus');
   const remoteVideo = $('remoteVideo');
-  const clientStatus = $('clientStatus');
+  const viewerStatus = $('viewerStatus');
   const digits = [$('d1'), $('d2'), $('d3')];
 
-  let hostPeer = null;
-  let clientPeer = null;
+  let broadcastPeer = null;
+  let viewerPeer = null;
   let activeCall = null;
   let localStream = null;
+  let pendingViewerId = null;
   let currentCode = '';
 
   const peerOptions = {
@@ -214,8 +235,8 @@
 
   function showView(name) {
     viewHome.classList.toggle('hidden', name !== 'home');
-    viewHost.classList.toggle('hidden', name !== 'host');
-    viewClient.classList.toggle('hidden', name !== 'client');
+    viewBroadcast.classList.toggle('hidden', name !== 'broadcast');
+    viewViewer.classList.toggle('hidden', name !== 'viewer');
     backBtn.classList.toggle('hidden', name === 'home');
   }
 
@@ -230,26 +251,31 @@
       try { activeCall.close(); } catch (_) {}
       activeCall = null;
     }
-    if (hostPeer) {
-      hostPeer.destroy();
-      hostPeer = null;
+    if (broadcastPeer) {
+      broadcastPeer.destroy();
+      broadcastPeer = null;
     }
-    if (clientPeer) {
-      clientPeer.destroy();
-      clientPeer = null;
+    if (viewerPeer) {
+      viewerPeer.destroy();
+      viewerPeer = null;
     }
+    pendingViewerId = null;
     if (localStream) {
       localStream.getTracks().forEach((t) => t.stop());
       localStream = null;
     }
     remoteVideo.srcObject = null;
     remoteVideo.classList.add('hidden');
-    $('btnStopHost').classList.add('hidden');
+    $('videoFullscreenHint').classList.add('hidden');
+    if (document.fullscreenElement === remoteVideo) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+    $('btnStopViewer').classList.add('hidden');
     $('btnShareScreen').classList.add('hidden');
     currentCode = '';
   }
 
-  function openHostPeer(code) {
+  function openBroadcastPeer(code) {
     return new Promise((resolve, reject) => {
       const id = peerRoomId(code);
       const peer = new Peer(id, peerOptions);
@@ -272,66 +298,80 @@
     });
   }
 
-  function wireHostPeer(peer) {
-    peer.on('call', (call) => {
-      setStatus(hostStatus, 'Téléphone connecté — réception…', 'ok');
-      activeCall = call;
-      call.answer();
-      call.on('stream', (stream) => {
-        remoteVideo.srcObject = stream;
-        remoteVideo.classList.remove('hidden');
-        remoteVideo.muted = false;
-        setStatus(hostStatus, 'Écran reçu — lecture en cours.', 'ok');
-        $('btnStopHost').classList.remove('hidden');
-      });
-      call.on('close', () => {
-        setStatus(hostStatus, 'Partage arrêté.', 'warn');
-        remoteVideo.classList.add('hidden');
-        activeCall = null;
-      });
-      call.on('error', () => {
-        setStatus(hostStatus, 'Erreur pendant l’appel.', 'err');
+  function trySendStreamToViewer() {
+    if (!broadcastPeer || broadcastPeer.destroyed || !pendingViewerId || !localStream) return;
+    if (activeCall) {
+      try { activeCall.close(); } catch (_) {}
+      activeCall = null;
+    }
+    const call = broadcastPeer.call(pendingViewerId, localStream);
+    activeCall = call;
+    call.on('close', () => {
+      setStatus(broadcastStatus, 'L’ordinateur s’est déconnecté.', 'warn');
+      activeCall = null;
+    });
+    call.on('error', () => {
+      setStatus(broadcastStatus, 'Envoi vers l’ordinateur impossible.', 'err');
+    });
+    setStatus(broadcastStatus, 'Écran du téléphone envoyé à l’ordinateur.', 'ok');
+  }
+
+  function wireBroadcastPeer(peer) {
+    peer.on('connection', (conn) => {
+      conn.on('data', (data) => {
+        if (data?.type === 'viewer-ready' && data.viewerId) {
+          pendingViewerId = data.viewerId;
+          setStatus(
+            broadcastStatus,
+            localStream
+              ? 'Ordinateur connecté — envoi en cours…'
+              : 'Ordinateur connecté — appuie sur « Partager l’écran ».',
+            'ok'
+          );
+          trySendStreamToViewer();
+        }
       });
     });
 
     peer.on('disconnected', () => {
-      setStatus(hostStatus, 'Connexion relais perdue. Recharge et recrée un code.', 'warn');
+      setStatus(broadcastStatus, 'Connexion relais perdue. Recharge et recrée un code.', 'warn');
     });
   }
 
   $('btnCreate').onclick = async () => {
     cleanup();
-    showView('host');
+    showView('broadcast');
     hostCode.textContent = '---';
-    setStatus(hostStatus, 'Création du code…', 'warn');
+    setStatus(broadcastStatus, 'Création du code…', 'warn');
 
     for (let attempt = 0; attempt < 25; attempt++) {
       const code = randomCode();
       try {
-        hostPeer = await openHostPeer(code);
+        broadcastPeer = await openBroadcastPeer(code);
         currentCode = code;
         hostCode.textContent = code;
-        wireHostPeer(hostPeer);
-        setStatus(hostStatus, 'En attente du téléphone…', 'warn');
+        wireBroadcastPeer(broadcastPeer);
+        $('btnShareScreen').classList.remove('hidden');
+        setStatus(broadcastStatus, 'Partage ton écran, puis saisis ce code sur l’ordinateur.', 'warn');
         return;
       } catch (err) {
         if (err.message === 'taken') continue;
         setStatus(
-          hostStatus,
+          broadcastStatus,
           'Connexion impossible (réseau ou service PeerJS). Réessaie dans un instant.',
           'err'
         );
         return;
       }
     }
-    setStatus(hostStatus, 'Aucun code libre pour l’instant. Réessaie.', 'err');
+    setStatus(broadcastStatus, 'Aucun code libre pour l’instant. Réessaie.', 'err');
   };
 
   $('btnEnter').onclick = () => {
     cleanup();
-    showView('client');
+    showView('viewer');
     digits.forEach((d) => { d.value = ''; });
-    clientStatus.classList.add('hidden');
+    viewerStatus.classList.add('hidden');
     digits[0].focus();
   };
 
@@ -352,27 +392,60 @@
   $('btnConnect').onclick = () => {
     const code = getEnteredCode();
     if (code.length !== 3) {
-      setStatus(clientStatus, 'Entre exactement 3 chiffres.', 'err');
+      setStatus(viewerStatus, 'Entre exactement 3 chiffres.', 'err');
       return;
     }
 
     cleanup();
     currentCode = code;
-    setStatus(clientStatus, 'Connexion…', 'warn');
+    showView('viewer');
+    setStatus(viewerStatus, 'Connexion au téléphone…', 'warn');
 
-    clientPeer = new Peer(undefined, peerOptions);
-    clientPeer.on('open', () => {
-      setStatus(clientStatus, 'Prêt. Appuie sur « Partager l’écran ».', 'ok');
-      $('btnShareScreen').classList.remove('hidden');
+    viewerPeer = new Peer(undefined, peerOptions);
+
+    viewerPeer.on('call', (call) => {
+      activeCall = call;
+      call.answer();
+      call.on('stream', (stream) => {
+        remoteVideo.srcObject = stream;
+        remoteVideo.classList.remove('hidden');
+        $('videoFullscreenHint').classList.remove('hidden');
+        setStatus(viewerStatus, 'Écran du téléphone — lecture en cours.', 'ok');
+        $('btnStopViewer').classList.remove('hidden');
+      });
+      call.on('close', () => {
+        setStatus(viewerStatus, 'Le téléphone a arrêté le partage.', 'warn');
+        remoteVideo.classList.add('hidden');
+      });
+      call.on('error', () => {
+        setStatus(viewerStatus, 'Erreur de réception vidéo.', 'err');
+      });
     });
-    clientPeer.on('error', () => {
-      setStatus(clientStatus, 'Erreur de connexion. Réessaie.', 'err');
+
+    viewerPeer.on('open', () => {
+      const roomId = peerRoomId(currentCode);
+      const conn = viewerPeer.connect(roomId);
+      conn.on('open', () => {
+        conn.send({ type: 'viewer-ready', viewerId: viewerPeer.id });
+        setStatus(viewerStatus, 'Connecté — en attente de l’écran du téléphone…', 'ok');
+      });
+      conn.on('error', () => {
+        setStatus(
+          viewerStatus,
+          'Code introuvable : sur le téléphone, « Créer code » doit être ouvert.',
+          'err'
+        );
+      });
+    });
+
+    viewerPeer.on('error', () => {
+      setStatus(viewerStatus, 'Erreur de connexion. Réessaie.', 'err');
     });
   };
 
   $('btnShareScreen').onclick = async () => {
-    if (!clientPeer || clientPeer.destroyed) return;
-    setStatus(clientStatus, 'Demande d’accès à l’écran…', 'warn');
+    if (!broadcastPeer || broadcastPeer.destroyed) return;
+    setStatus(broadcastStatus, 'Demande d’accès à l’écran…', 'warn');
     try {
       if (!navigator.mediaDevices?.getDisplayMedia) {
         throw new Error('unsupported');
@@ -383,34 +456,46 @@
       });
 
       localStream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        setStatus(clientStatus, 'Partage d’écran arrêté.', 'warn');
+        setStatus(broadcastStatus, 'Partage d’écran arrêté.', 'warn');
+        localStream = null;
       });
 
-      const call = clientPeer.call(peerRoomId(currentCode), localStream);
-      activeCall = call;
-      call.on('error', () => {
-        setStatus(
-          clientStatus,
-          'Code introuvable : sur le PC, ouvre « Créer code » et laisse la page ouverte.',
-          'err'
-        );
-      });
-      call.on('close', () => {
-        setStatus(clientStatus, 'Connexion fermée.', 'warn');
-      });
-      setStatus(clientStatus, 'Écran envoyé vers le PC.', 'ok');
+      trySendStreamToViewer();
+      if (!pendingViewerId) {
+        setStatus(broadcastStatus, 'Écran prêt — en attente de l’ordinateur…', 'ok');
+      }
     } catch (e) {
       const msg = e.message === 'unsupported'
-        ? 'Ton navigateur ne permet pas le partage d’écran ici.'
+        ? 'Ce navigateur ne peut pas partager l’écran du téléphone (essaie Chrome sur Android).'
         : 'Partage refusé ou annulé.';
-      setStatus(clientStatus, msg, 'err');
+      setStatus(broadcastStatus, msg, 'err');
     }
   };
 
-  $('btnStopHost').onclick = () => {
+  $('btnStopBroadcast').onclick = () => {
     cleanup();
     showView('home');
   };
+
+  $('btnStopViewer').onclick = () => {
+    cleanup();
+    showView('home');
+  };
+
+  function toggleVideoFullscreen() {
+    if (remoteVideo.classList.contains('hidden')) return;
+    const doc = document;
+    const isFs = doc.fullscreenElement === remoteVideo
+      || doc.webkitFullscreenElement === remoteVideo;
+    if (isFs) {
+      (doc.exitFullscreen || doc.webkitExitFullscreen)?.call(doc);
+      return;
+    }
+    const req = remoteVideo.requestFullscreen || remoteVideo.webkitRequestFullscreen;
+    req?.call(remoteVideo)?.catch(() => {});
+  }
+
+  remoteVideo.addEventListener('click', toggleVideoFullscreen);
 
   backBtn.onclick = () => {
     cleanup();
