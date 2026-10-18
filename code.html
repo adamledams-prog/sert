@@ -171,9 +171,10 @@
   <div class="status hidden" id="clientStatus"></div>
   <button type="button" class="btn" id="btnConnect">Se connecter</button>
   <button type="button" class="btn secondary hidden" id="btnShareScreen">Partager l’écran</button>
-  <p class="hint">Sur Android Chrome : autorise le partage d’écran quand le navigateur le demande.</p>
+  <p class="hint">Sur Android Chrome : autorise le partage d’écran quand le navigateur le demande. Fonctionne en ligne (Vercel) sans serveur à lancer.</p>
 </section>
 
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -188,13 +189,28 @@
   const clientStatus = $('clientStatus');
   const digits = [$('d1'), $('d2'), $('d3')];
 
-  let ws = null;
-  let pc = null;
+  let hostPeer = null;
+  let clientPeer = null;
+  let activeCall = null;
   let localStream = null;
   let currentCode = '';
-  let role = null;
 
-  const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+  const peerOptions = {
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+    },
+  };
+
+  function peerRoomId(code) {
+    return `sert-${code}`;
+  }
+
+  function randomCode() {
+    return String(Math.floor(100 + Math.random() * 900));
+  }
 
   function showView(name) {
     viewHome.classList.toggle('hidden', name !== 'home');
@@ -210,14 +226,17 @@
   }
 
   function cleanup() {
-    if (ws) {
-      ws.onclose = null;
-      ws.close();
-      ws = null;
+    if (activeCall) {
+      try { activeCall.close(); } catch (_) {}
+      activeCall = null;
     }
-    if (pc) {
-      pc.close();
-      pc = null;
+    if (hostPeer) {
+      hostPeer.destroy();
+      hostPeer = null;
+    }
+    if (clientPeer) {
+      clientPeer.destroy();
+      clientPeer = null;
     }
     if (localStream) {
       localStream.getTracks().forEach((t) => t.stop());
@@ -228,118 +247,84 @@
     $('btnStopHost').classList.add('hidden');
     $('btnShareScreen').classList.add('hidden');
     currentCode = '';
-    role = null;
   }
 
-  function wsUrl(code, r) {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${proto}://${location.host}/ws?code=${encodeURIComponent(code)}&role=${r}`;
-  }
-
-  function connectWs(code, r) {
+  function openHostPeer(code) {
     return new Promise((resolve, reject) => {
-      const socket = new WebSocket(wsUrl(code, r));
-      socket.onopen = () => resolve(socket);
-      socket.onerror = () => reject(new Error('WebSocket'));
-      socket.onclose = (ev) => {
-        if (ev.code >= 4000) {
-          const msgs = {
-            4001: 'Code expiré. Crée-en un nouveau sur le PC.',
-            4002: 'Cet écran est déjà ouvert sur le PC.',
-            4003: 'Un téléphone est déjà connecté.',
-          };
-          setStatus(clientStatus, msgs[ev.code] || 'Connexion refusée.', 'err');
-        }
-      };
+      const id = peerRoomId(code);
+      const peer = new Peer(id, peerOptions);
+      const timer = setTimeout(() => {
+        peer.destroy();
+        reject(new Error('timeout'));
+      }, 20000);
+
+      peer.once('open', () => {
+        clearTimeout(timer);
+        resolve(peer);
+      });
+
+      peer.once('error', (err) => {
+        clearTimeout(timer);
+        peer.destroy();
+        if (err.type === 'unavailable-id') reject(new Error('taken'));
+        else reject(err);
+      });
     });
   }
 
-  function createPeer(isHost) {
-    const peer = new RTCPeerConnection({ iceServers });
-    peer.onicecandidate = (ev) => {
-      if (ev.candidate && ws) {
-        ws.send(JSON.stringify({ type: 'ice', candidate: ev.candidate }));
-      }
-    };
-    if (isHost) {
-      peer.ontrack = (ev) => {
-        remoteVideo.srcObject = ev.streams[0];
+  function wireHostPeer(peer) {
+    peer.on('call', (call) => {
+      setStatus(hostStatus, 'Téléphone connecté — réception…', 'ok');
+      activeCall = call;
+      call.answer();
+      call.on('stream', (stream) => {
+        remoteVideo.srcObject = stream;
         remoteVideo.classList.remove('hidden');
         remoteVideo.muted = false;
         setStatus(hostStatus, 'Écran reçu — lecture en cours.', 'ok');
         $('btnStopHost').classList.remove('hidden');
-      };
-    }
-    return peer;
-  }
+      });
+      call.on('close', () => {
+        setStatus(hostStatus, 'Partage arrêté.', 'warn');
+        remoteVideo.classList.add('hidden');
+        activeCall = null;
+      });
+      call.on('error', () => {
+        setStatus(hostStatus, 'Erreur pendant l’appel.', 'err');
+      });
+    });
 
-  function wireSignaling(socket, isHost) {
-    socket.onmessage = async (ev) => {
-      let msg;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-
-      if (msg.type === 'peer-joined') {
-        if (isHost) {
-          setStatus(hostStatus, 'Téléphone connecté. En attente du partage d’écran…', 'ok');
-        } else {
-          setStatus(clientStatus, 'Connecté au PC. Appuie sur « Partager l’écran ».', 'ok');
-          $('btnShareScreen').classList.remove('hidden');
-        }
-      }
-
-      if (msg.type === 'peer-left') {
-        if (isHost) {
-          setStatus(hostStatus, 'Téléphone déconnecté.', 'warn');
-          remoteVideo.classList.add('hidden');
-        } else {
-          setStatus(clientStatus, 'PC déconnecté.', 'warn');
-        }
-      }
-
-      if (!pc) return;
-
-      if (msg.type === 'offer' && isHost) {
-        await pc.setRemoteDescription(msg.sdp);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify({ type: 'answer', sdp: pc.localDescription }));
-      }
-
-      if (msg.type === 'answer' && !isHost) {
-        await pc.setRemoteDescription(msg.sdp);
-      }
-
-      if (msg.type === 'ice' && msg.candidate) {
-        try {
-          await pc.addIceCandidate(msg.candidate);
-        } catch (_) {}
-      }
-    };
+    peer.on('disconnected', () => {
+      setStatus(hostStatus, 'Connexion relais perdue. Recharge et recrée un code.', 'warn');
+    });
   }
 
   $('btnCreate').onclick = async () => {
     cleanup();
     showView('host');
+    hostCode.textContent = '---';
     setStatus(hostStatus, 'Création du code…', 'warn');
-    try {
-      const res = await fetch('/api/create-code', { method: 'POST' });
-      if (!res.ok) throw new Error('api');
-      const { code } = await res.json();
-      currentCode = code;
-      role = 'host';
-      hostCode.textContent = code;
-      setStatus(hostStatus, 'En attente du téléphone…', 'warn');
 
-      ws = await connectWs(code, 'host');
-      pc = createPeer(true);
-      wireSignaling(ws, true);
-    } catch {
-      setStatus(hostStatus, 'Impossible de créer le code. Lance mirror-server.js.', 'err');
+    for (let attempt = 0; attempt < 25; attempt++) {
+      const code = randomCode();
+      try {
+        hostPeer = await openHostPeer(code);
+        currentCode = code;
+        hostCode.textContent = code;
+        wireHostPeer(hostPeer);
+        setStatus(hostStatus, 'En attente du téléphone…', 'warn');
+        return;
+      } catch (err) {
+        if (err.message === 'taken') continue;
+        setStatus(
+          hostStatus,
+          'Connexion impossible (réseau ou service PeerJS). Réessaie dans un instant.',
+          'err'
+        );
+        return;
+      }
     }
+    setStatus(hostStatus, 'Aucun code libre pour l’instant. Réessaie.', 'err');
   };
 
   $('btnEnter').onclick = () => {
@@ -364,7 +349,7 @@
     return digits.map((d) => d.value).join('');
   }
 
-  $('btnConnect').onclick = async () => {
+  $('btnConnect').onclick = () => {
     const code = getEnteredCode();
     if (code.length !== 3) {
       setStatus(clientStatus, 'Entre exactement 3 chiffres.', 'err');
@@ -373,47 +358,46 @@
 
     cleanup();
     currentCode = code;
-    role = 'client';
-    setStatus(clientStatus, 'Vérification du code…', 'warn');
+    setStatus(clientStatus, 'Connexion…', 'warn');
 
-    try {
-      const check = await fetch(`/api/room/${code}`);
-      const data = await check.json();
-      if (!data.ok) {
-        setStatus(clientStatus, 'Code inconnu ou expiré.', 'err');
-        return;
-      }
-
-      ws = await connectWs(code, 'client');
-      pc = createPeer(false);
-      wireSignaling(ws, false);
-      setStatus(clientStatus, 'Connecté. En attente du PC…', 'ok');
-    } catch {
-      setStatus(clientStatus, 'Connexion impossible. Même Wi‑Fi et même adresse que le PC ?', 'err');
-    }
+    clientPeer = new Peer(undefined, peerOptions);
+    clientPeer.on('open', () => {
+      setStatus(clientStatus, 'Prêt. Appuie sur « Partager l’écran ».', 'ok');
+      $('btnShareScreen').classList.remove('hidden');
+    });
+    clientPeer.on('error', () => {
+      setStatus(clientStatus, 'Erreur de connexion. Réessaie.', 'err');
+    });
   };
 
   $('btnShareScreen').onclick = async () => {
-    if (!pc || !ws) return;
+    if (!clientPeer || clientPeer.destroyed) return;
     setStatus(clientStatus, 'Demande d’accès à l’écran…', 'warn');
     try {
-      const constraints = {
-        video: { frameRate: { ideal: 30, max: 30 } },
-        audio: false,
-      };
       if (!navigator.mediaDevices?.getDisplayMedia) {
         throw new Error('unsupported');
       }
-      localStream = await navigator.mediaDevices.getDisplayMedia(constraints);
-      localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+      localStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 30 } },
+        audio: false,
+      });
 
       localStream.getVideoTracks()[0]?.addEventListener('ended', () => {
         setStatus(clientStatus, 'Partage d’écran arrêté.', 'warn');
       });
 
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      ws.send(JSON.stringify({ type: 'offer', sdp: pc.localDescription }));
+      const call = clientPeer.call(peerRoomId(currentCode), localStream);
+      activeCall = call;
+      call.on('error', () => {
+        setStatus(
+          clientStatus,
+          'Code introuvable : sur le PC, ouvre « Créer code » et laisse la page ouverte.',
+          'err'
+        );
+      });
+      call.on('close', () => {
+        setStatus(clientStatus, 'Connexion fermée.', 'warn');
+      });
       setStatus(clientStatus, 'Écran envoyé vers le PC.', 'ok');
     } catch (e) {
       const msg = e.message === 'unsupported'
