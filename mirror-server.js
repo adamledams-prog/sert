@@ -67,7 +67,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  let filePath = url.pathname === '/' ? '/code.html' : url.pathname;
+  let filePath = url.pathname === '/' ? '/index.html' : url.pathname;
   filePath = path.join(__dirname, path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, ''));
   if (!filePath.startsWith(__dirname)) {
     res.writeHead(403);

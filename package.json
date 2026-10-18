@@ -2,7 +2,7 @@
   "name": "tier-list-maker",
   "version": "1.0.0",
   "scripts": {
-    "dev": "npx live-server --port=3000 --open=tierlist.html",
+    "dev": "npx live-server --port=3000 --open=index.html",
     "mirror": "node mirror-server.js"
   },
   "dependencies": {
