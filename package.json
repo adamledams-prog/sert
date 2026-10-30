@@ -2,8 +2,9 @@
   "name": "tier-list-maker",
   "version": "1.0.0",
   "scripts": {
-    "dev": "npx live-server --port=3000 --open=index.html",
-    "mirror": "node mirror-server.js"
+    "dev": "npx live-server --port=3000 --host=0.0.0.0 --open=index.html",
+    "mirror": "node mirror-server.js",
+    "deploy": "vercel --prod --yes"
   },
   "dependencies": {
     "ws": "^8.18.0"

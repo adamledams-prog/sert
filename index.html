@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1a1a2e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sert">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/images/Shelly.png">
 <title>Sert — accueil</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -85,6 +91,22 @@
     text-align: center;
     max-width: 340px;
   }
+
+  .install-hint {
+    font-size: 0.78rem;
+    color: #778;
+    text-align: center;
+    max-width: 320px;
+    line-height: 1.45;
+    padding: 10px 14px;
+    border: 1px dashed #445;
+    border-radius: 10px;
+    display: none;
+  }
+
+  @media (max-width: 768px), (hover: none) {
+    .install-hint { display: block; }
+  }
 </style>
 </head>
 <body>
@@ -106,6 +128,8 @@
     <span>Téléphone crée le code → PC regarde</span>
   </a>
 </nav>
+
+<p class="install-hint">Sur téléphone : menu Chrome (⋮) → <strong>Installer l’application</strong> ou <strong>Ajouter à l’écran d’accueil</strong> pour ouvrir Sert comme une app.</p>
 
 </body>
 </html>

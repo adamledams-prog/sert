@@ -1,0 +1,26 @@
+{
+  "name": "Sert",
+  "short_name": "Sert",
+  "description": "Tier list, roue et code écran Brawl Stars",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/images/Shelly.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/Shelly.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

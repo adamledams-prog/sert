@@ -110,25 +110,48 @@
     box-shadow: 0 0 0 3px rgba(107, 72, 255, 0.35);
   }
 
-  #remoteVideo {
-    width: 100%;
-    max-width: 960px;
-    max-height: 70vh;
+  .mirror-pip {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    width: min(32vw, 140px);
+    aspect-ratio: 9 / 16;
+    max-height: 28vh;
     background: #000;
-    border-radius: 12px;
-    border: 1px solid #444;
+    border-radius: 10px;
+    border: 2px solid #6b48ff;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+    object-fit: cover;
+    z-index: 500;
     cursor: pointer;
-    object-fit: contain;
+    touch-action: manipulation;
   }
 
-  #remoteVideo:fullscreen,
-  #remoteVideo:-webkit-full-screen {
+  .mirror-pip.expanded {
+    top: 0;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    aspect-ratio: unset;
+    border-radius: 0;
+    border: none;
+    object-fit: contain;
+    z-index: 600;
+  }
+
+  .mirror-pip:fullscreen,
+  .mirror-pip:-webkit-full-screen {
     width: 100%;
     height: 100%;
     max-width: none;
     max-height: none;
     border-radius: 0;
     border: none;
+    object-fit: contain;
   }
 
   .video-hint {
@@ -148,6 +171,7 @@
     padding: 8px 14px;
     cursor: pointer;
     font-size: 0.9rem;
+    z-index: 700;
   }
   .back:hover { background: #3a3a6a; }
 
@@ -155,6 +179,7 @@
     font-size: 0.85rem;
     color: #778;
     text-align: center;
+    line-height: 1.45;
   }
 </style>
 </head>
@@ -162,26 +187,28 @@
 
 <button type="button" class="back hidden" id="backBtn">← Accueil</button>
 
+<video id="localPreview" class="mirror-pip hidden" autoplay playsinline muted aria-label="Aperçu écran"></video>
+<video id="remoteVideo" class="mirror-pip hidden" autoplay playsinline aria-label="Écran distant"></video>
+
 <section id="viewHome" class="panel">
   <h1>Miroir écran</h1>
-  <p class="subtitle">Sur le <strong>téléphone</strong> : crée le code et partage ton écran. Sur l’<strong>ordinateur</strong> : saisis le code pour voir l’écran du téléphone.</p>
+  <p class="subtitle">Sur le <strong>téléphone</strong> : crée le code (Android demandera la capture d’écran). Sur l’<strong>ordinateur</strong> : saisis le code — l’image apparaît en haut à droite, <strong>double-clic</strong> pour agrandir.</p>
   <button type="button" class="btn" id="btnCreate">Créer code <span style="font-weight:400;font-size:0.85em">(téléphone)</span></button>
   <button type="button" class="btn secondary" id="btnEnter">Saisir code <span style="font-weight:400;font-size:0.85em">(ordinateur)</span></button>
 </section>
 
 <section id="viewBroadcast" class="panel hidden">
   <h1>Ton code</h1>
-  <p class="subtitle">Affiche ce code à l’ordinateur, puis partage l’écran de ce téléphone.</p>
+  <p class="subtitle">Saisis ce code sur l’ordinateur. L’aperçu de ton écran est en haut à droite — double-clic pour le plein écran.</p>
   <div class="code-display" id="hostCode">---</div>
   <div class="status warn" id="broadcastStatus">Création…</div>
-  <button type="button" class="btn secondary hidden" id="btnShareScreen">Partager l’écran du téléphone</button>
-  <p class="hint">Android + Chrome recommandé. Autorise la capture d’écran si le navigateur le demande.</p>
+  <p class="hint">Si Android affiche une fenêtre système, choisis <strong>Démarrer maintenant</strong> / partage d’écran. Garde Chrome ouvert.</p>
   <button type="button" class="btn danger" id="btnStopBroadcast">Arrêter</button>
 </section>
 
 <section id="viewViewer" class="panel hidden" style="max-width:960px">
   <h1>Saisir le code</h1>
-  <p class="subtitle">Entre les 3 chiffres affichés sur le téléphone.</p>
+  <p class="subtitle">Entre les 3 chiffres affichés sur le téléphone. Quand c’est connecté, l’écran s’affiche en haut à droite.</p>
   <div class="code-input-wrap">
     <input class="digit" type="tel" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Chiffre 1" id="d1">
     <input class="digit" type="tel" inputmode="numeric" maxlength="1" pattern="[0-9]" aria-label="Chiffre 2" id="d2">
@@ -189,8 +216,7 @@
   </div>
   <div class="status hidden" id="viewerStatus"></div>
   <button type="button" class="btn" id="btnConnect">Se connecter</button>
-  <video id="remoteVideo" class="hidden" autoplay playsinline title="Clique pour plein écran"></video>
-  <p class="video-hint hidden" id="videoFullscreenHint">Clique sur l’image pour le plein écran (Échap pour quitter).</p>
+  <p class="video-hint hidden" id="videoFullscreenHint">Double-clic sur l’aperçu (en haut à droite) pour le plein écran.</p>
   <button type="button" class="btn danger hidden" id="btnStopViewer">Arrêter</button>
 </section>
 
@@ -205,6 +231,7 @@
   const backBtn = $('backBtn');
   const hostCode = $('hostCode');
   const broadcastStatus = $('broadcastStatus');
+  const localPreview = $('localPreview');
   const remoteVideo = $('remoteVideo');
   const viewerStatus = $('viewerStatus');
   const digits = [$('d1'), $('d2'), $('d3')];
@@ -238,6 +265,8 @@
     viewBroadcast.classList.toggle('hidden', name !== 'broadcast');
     viewViewer.classList.toggle('hidden', name !== 'viewer');
     backBtn.classList.toggle('hidden', name === 'home');
+    localPreview.classList.toggle('hidden', name !== 'broadcast' || !localStream);
+    remoteVideo.classList.toggle('hidden', name !== 'viewer' || !remoteVideo.srcObject);
   }
 
   function setStatus(el, text, kind) {
@@ -245,6 +274,56 @@
     el.classList.remove('hidden', 'ok', 'warn', 'err');
     if (kind) el.classList.add(kind);
   }
+
+  function hidePip(video) {
+    video.classList.remove('expanded');
+    if (document.fullscreenElement === video) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }
+
+  function showPip(video) {
+    video.classList.remove('hidden');
+    video.classList.remove('expanded');
+  }
+
+  function togglePipExpand(video) {
+    if (video.classList.contains('hidden')) return;
+    const goingBig = !video.classList.contains('expanded');
+    video.classList.toggle('expanded', goingBig);
+    if (goingBig) {
+      const req = video.requestFullscreen || video.webkitRequestFullscreen;
+      req?.call(video)?.catch(() => {});
+    } else {
+      hidePip(video);
+    }
+  }
+
+  function wirePipDoubleTap(video) {
+    let lastTap = 0;
+    video.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      togglePipExpand(video);
+    });
+    video.addEventListener('touchend', (e) => {
+      const now = Date.now();
+      if (now - lastTap < 320) {
+        e.preventDefault();
+        togglePipExpand(video);
+        lastTap = 0;
+      } else {
+        lastTap = now;
+      }
+    });
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement && video.classList.contains('expanded')) {
+        video.classList.remove('expanded');
+      }
+    });
+  }
+
+  wirePipDoubleTap(localPreview);
+  wirePipDoubleTap(remoteVideo);
 
   function cleanup() {
     if (activeCall) {
@@ -264,15 +343,45 @@
       localStream.getTracks().forEach((t) => t.stop());
       localStream = null;
     }
+    localPreview.srcObject = null;
     remoteVideo.srcObject = null;
+    hidePip(localPreview);
+    hidePip(remoteVideo);
+    localPreview.classList.add('hidden');
     remoteVideo.classList.add('hidden');
     $('videoFullscreenHint').classList.add('hidden');
-    if (document.fullscreenElement === remoteVideo) {
-      document.exitFullscreen?.().catch(() => {});
-    }
     $('btnStopViewer').classList.add('hidden');
-    $('btnShareScreen').classList.add('hidden');
     currentCode = '';
+  }
+
+  async function startScreenCapture() {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      throw new Error('unsupported');
+    }
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        frameRate: { ideal: 24, max: 30 },
+      },
+      audio: false,
+    });
+    stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      setStatus(broadcastStatus, 'Capture d’écran arrêtée (Android ou notification).', 'warn');
+      localStream = null;
+      localPreview.srcObject = null;
+      localPreview.classList.add('hidden');
+    });
+    return stream;
+  }
+
+  function onLocalStreamReady() {
+    localPreview.srcObject = localStream;
+    showPip(localPreview);
+    trySendStreamToViewer();
+    if (pendingViewerId) {
+      setStatus(broadcastStatus, 'Écran envoyé à l’ordinateur.', 'ok');
+    } else {
+      setStatus(broadcastStatus, 'Écran actif — en attente du code sur l’ordinateur.', 'ok');
+    }
   }
 
   function openBroadcastPeer(code) {
@@ -321,13 +430,7 @@
       conn.on('data', (data) => {
         if (data?.type === 'viewer-ready' && data.viewerId) {
           pendingViewerId = data.viewerId;
-          setStatus(
-            broadcastStatus,
-            localStream
-              ? 'Ordinateur connecté — envoi en cours…'
-              : 'Ordinateur connecté — appuie sur « Partager l’écran ».',
-            'ok'
-          );
+          setStatus(broadcastStatus, 'Ordinateur connecté — envoi…', 'ok');
           trySendStreamToViewer();
         }
       });
@@ -341,8 +444,21 @@
   $('btnCreate').onclick = async () => {
     cleanup();
     showView('broadcast');
-    hostCode.textContent = '---';
-    setStatus(broadcastStatus, 'Création du code…', 'warn');
+    hostCode.textContent = '…';
+    setStatus(broadcastStatus, 'Autorise la capture d’écran (fenêtre Android)…', 'warn');
+
+    try {
+      localStream = await startScreenCapture();
+      onLocalStreamReady();
+    } catch (e) {
+      const msg = e.message === 'unsupported'
+        ? 'Capture impossible ici : ouvre cette page en HTTPS avec Chrome sur Android (pas l’app Google ni un navigateur intégré).'
+        : 'Capture refusée. Relance « Créer code » et accepte le partage d’écran Android.';
+      setStatus(broadcastStatus, msg, 'err');
+      return;
+    }
+
+    setStatus(broadcastStatus, 'Code en cours de création…', 'warn');
 
     for (let attempt = 0; attempt < 25; attempt++) {
       const code = randomCode();
@@ -351,20 +467,19 @@
         currentCode = code;
         hostCode.textContent = code;
         wireBroadcastPeer(broadcastPeer);
-        $('btnShareScreen').classList.remove('hidden');
-        setStatus(broadcastStatus, 'Partage ton écran, puis saisis ce code sur l’ordinateur.', 'warn');
+        if (pendingViewerId) trySendStreamToViewer();
         return;
       } catch (err) {
         if (err.message === 'taken') continue;
         setStatus(
           broadcastStatus,
-          'Connexion impossible (réseau ou service PeerJS). Réessaie dans un instant.',
+          'Connexion impossible (réseau ou PeerJS). Réessaie.',
           'err'
         );
         return;
       }
     }
-    setStatus(broadcastStatus, 'Aucun code libre pour l’instant. Réessaie.', 'err');
+    setStatus(broadcastStatus, 'Aucun code libre. Réessaie.', 'err');
   };
 
   $('btnEnter').onclick = () => {
@@ -408,13 +523,14 @@
       call.answer();
       call.on('stream', (stream) => {
         remoteVideo.srcObject = stream;
-        remoteVideo.classList.remove('hidden');
+        showPip(remoteVideo);
         $('videoFullscreenHint').classList.remove('hidden');
-        setStatus(viewerStatus, 'Écran du téléphone — lecture en cours.', 'ok');
+        setStatus(viewerStatus, 'Connecté — double-clic sur l’aperçu pour agrandir.', 'ok');
         $('btnStopViewer').classList.remove('hidden');
       });
       call.on('close', () => {
         setStatus(viewerStatus, 'Le téléphone a arrêté le partage.', 'warn');
+        remoteVideo.srcObject = null;
         remoteVideo.classList.add('hidden');
       });
       call.on('error', () => {
@@ -443,35 +559,6 @@
     });
   };
 
-  $('btnShareScreen').onclick = async () => {
-    if (!broadcastPeer || broadcastPeer.destroyed) return;
-    setStatus(broadcastStatus, 'Demande d’accès à l’écran…', 'warn');
-    try {
-      if (!navigator.mediaDevices?.getDisplayMedia) {
-        throw new Error('unsupported');
-      }
-      localStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 30, max: 30 } },
-        audio: false,
-      });
-
-      localStream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        setStatus(broadcastStatus, 'Partage d’écran arrêté.', 'warn');
-        localStream = null;
-      });
-
-      trySendStreamToViewer();
-      if (!pendingViewerId) {
-        setStatus(broadcastStatus, 'Écran prêt — en attente de l’ordinateur…', 'ok');
-      }
-    } catch (e) {
-      const msg = e.message === 'unsupported'
-        ? 'Ce navigateur ne peut pas partager l’écran du téléphone (essaie Chrome sur Android).'
-        : 'Partage refusé ou annulé.';
-      setStatus(broadcastStatus, msg, 'err');
-    }
-  };
-
   $('btnStopBroadcast').onclick = () => {
     cleanup();
     showView('home');
@@ -481,21 +568,6 @@
     cleanup();
     showView('home');
   };
-
-  function toggleVideoFullscreen() {
-    if (remoteVideo.classList.contains('hidden')) return;
-    const doc = document;
-    const isFs = doc.fullscreenElement === remoteVideo
-      || doc.webkitFullscreenElement === remoteVideo;
-    if (isFs) {
-      (doc.exitFullscreen || doc.webkitExitFullscreen)?.call(doc);
-      return;
-    }
-    const req = remoteVideo.requestFullscreen || remoteVideo.webkitRequestFullscreen;
-    req?.call(remoteVideo)?.catch(() => {});
-  }
-
-  remoteVideo.addEventListener('click', toggleVideoFullscreen);
 
   backBtn.onclick = () => {
     cleanup();
